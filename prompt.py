@@ -8,7 +8,8 @@ BLUE = "\033[94m"
 LIGHT_BLUE = "\033[36m"
 RED = "\033[31m"
 RESET = "\033[0m"
-model_id = "models/sd-turbo"
+model_id = "models/sdxl-turbo"
+lora_id = "models/sidig-lora"
 
 CLIP_TOKEN = "spaceisdirty"
 INSTRUCTIONS = CLIP_TOKEN + " " + (
@@ -23,10 +24,14 @@ def get_num_tokens(str):
 
 def main(args):
     if args.sdxl:
-        pipe = AutoPipelineForText2Image.from_pretrained("stabilityai/sdxl-turbo", torch_dtype=torch.float16, 
-                                                         variant="fp16").to("mps")
+        pipe = AutoPipelineForText2Image.from_pretrained(model_id, torch_dtype=torch.float16)
     else:
         pipe = AutoPipelineForText2Image.from_pretrained(model_id, torch_dtype=torch.float16)
+        try:
+            pipe.load_lora_weights(lora_id)
+            pipe.fuse_lora()
+        except Exception as e:
+            print(f"{RED}Unable to load LoRA weights from {lora_id}: {e}{RESET}")
 
     # use "cuda" on NVIDIA, "mps" on Mac, "cpu" otherwise
     if platform.system == "Windows":
@@ -72,7 +77,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SpaceIsDirty Image Generator (SIDIG) prompt.")
-    parser.add_argument("--sdxl", action="store_true", help="Use SDXL-Turbo model")
+    parser.add_argument("--sdxl", "-x", action="store_true", help="Use LoRA fine tuned SDXL-Turbo model")
     args = parser.parse_args()
     
     # main(args)
