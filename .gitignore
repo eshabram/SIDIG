@@ -2,3 +2,4 @@
 models/*
 images/*
 tools/
+**/*.zip

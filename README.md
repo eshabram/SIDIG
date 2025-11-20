@@ -2,9 +2,14 @@
 
 
 ## Getting Started
-It is highly recommended to use a virtual environment. If you use conda, it is recommended to use pip for package management. To install the dependencies, run this command from inside you virtual environment:
+It is highly recommended to use a virtual environment. To install the dependencies, run this command from inside you virtual environment:
 ```shell
 pip install -r requirements.txt
+```
+OR if you're really slick, you can use Conda:
+```
+conda env create -f environment.yml
+conda activate sidig
 ```
 
 ### Installing SDXL-Turbo

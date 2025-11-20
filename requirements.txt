@@ -1,4 +1,10 @@
 torch
-transformers
-huggingface
-huggingface_hub
+torchvision
+pillow
+tqdm
+diffusers==0.35.1
+transformers==4.55.0
+accelerate
+safetensors
+peft
+huggingface_hub>=0.25.0

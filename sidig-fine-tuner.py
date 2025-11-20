@@ -1,15 +1,11 @@
-import json
-import random
+import json, torch, random
 from pathlib import Path
-
-import torch
 import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
 from tqdm.auto import tqdm
-
+from peft import LoraConfig
 from diffusers import DDPMScheduler, StableDiffusionXLPipeline
-from diffusers.models.attention_processor import LoRAAttnProcessor2_5
 from diffusers.optimization import get_scheduler
 
 
@@ -21,7 +17,7 @@ OUTPUT_DIR = Path("models/sdxl-turbo-lora")
 RESOLUTION = 1024
 TRAIN_BATCH_SIZE = 1
 MAX_STEPS = 1000
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 0.00001
 RANK = 16
 LR_SCHEDULER = "cosine"
 LR_WARMUP_STEPS = 100
@@ -29,31 +25,20 @@ SEED = 42
 
 
 def attach_lora(unet, rank: int):
-    procs = {}
-    for name in unet.attn_processors.keys():
-        cross_dim = None if name.endswith("attn1.processor") else unet.config.cross_attention_dim
+    unet_lora_config = LoraConfig(
+        r=rank,
+        lora_alpha=rank,
+        target_modules=["to_k", "to_q", "to_v", "to_out.0"],
+        init_lora_weights="gaussian",
+    )
+    unet.add_adapter(unet_lora_config)
+    lora_params = [p for p in unet.parameters() if p.requires_grad]
+    return lora_params
 
-        if name.startswith("mid_block"):
-            hidden_size = unet.config.block_out_channels[-1]
-        elif name.startswith("up_blocks"):
-            block_id = int(name.split(".")[1])
-            hidden_size = list(reversed(unet.config.block_out_channels))[block_id]
-        elif name.startswith("down_blocks"):
-            block_id = int(name.split(".")[1])
-            hidden_size = unet.config.block_out_channels[block_id]
-        else:
-            hidden_size = unet.config.block_out_channels[0]
-
-        procs[name] = LoRAAttnProcessor2_5(
-            hidden_size=hidden_size,
-            cross_attention_dim=cross_dim,
-            rank=rank,
-        )
-
-    unet.set_attn_processor(procs)
 
 
 def main():
+    succeed = True
     random.seed(SEED)
     torch.manual_seed(SEED)
 
@@ -100,35 +85,45 @@ def main():
         ]
     )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
+    device = torch.device(
+        "cuda" if torch.cuda.is_available()
+        else ("mps" if torch.backends.mps.is_available() else "cpu")
+    )
 
-    pipe = StableDiffusionXLPipeline.from_pretrained(MODEL_PATH, torch_dtype=torch.float16 if device.type != "cpu" else torch.float32, variant="fp16", use_safetensors=True)
-    pipe.to(device)
-    pipe.unet.enable_gradient_checkpointing()
+    # Load pipeline as before
+    pipe = StableDiffusionXLPipeline.from_pretrained(
+        MODEL_PATH,
+        torch_dtype=torch.float16,   # keep this if you want encoders in fp16
+    ).to(device)
+
+    # Promote UNet + VAE to fp32 to avoid NaNs in latents
+    pipe.unet.to(device=device, dtype=torch.float32)
+    pipe.vae.to(device=device, dtype=torch.float32)
+
     pipe.vae.requires_grad_(False)
-
+    pipe.unet.requires_grad_(False)
     pipe.text_encoder.requires_grad_(False)
     pipe.text_encoder_2.requires_grad_(False)
+    pipe.unet.enable_gradient_checkpointing()
 
-    attach_lora(pipe.unet, RANK)
-    lora_params = [p for p in pipe.unet.parameters() if p.requires_grad]
+    lora_params = attach_lora(pipe.unet, RANK)
+    pipe.unet.train()
 
     optimizer = torch.optim.AdamW(lora_params, lr=LEARNING_RATE, betas=(0.9, 0.999), weight_decay=1e-2)
     lr_scheduler = get_scheduler(LR_SCHEDULER, optimizer=optimizer, num_warmup_steps=LR_WARMUP_STEPS, num_training_steps=MAX_STEPS)
 
     noise_scheduler = DDPMScheduler.from_config(pipe.scheduler.config)
     pipe.scheduler = noise_scheduler
-    scaler = torch.cuda.amp.GradScaler(enabled=device.type == "cuda")
 
     order = list(range(len(samples)))
     random.shuffle(order)
 
     cursor = 0
-    global_step = 0
+    step = 0
 
     progress = tqdm(total=MAX_STEPS, desc="Training LoRA", dynamic_ncols=True)
 
-    while global_step < MAX_STEPS:
+    while step < MAX_STEPS:
         batch_info = []
         while len(batch_info) < TRAIN_BATCH_SIZE:
             if cursor >= len(order):
@@ -179,32 +174,44 @@ def main():
             add_time_ids.append([h, w, RESOLUTION, RESOLUTION, 0, 0])
         add_time_ids = torch.tensor(add_time_ids, device=device, dtype=prompt_embeds.dtype)
 
-        with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=device.type != "cpu"):
-            model_pred = pipe.unet(
-                noisy_latents,
-                timesteps,
-                prompt_embeds,
-                added_cond_kwargs={"text_embeds": pooled_prompt_embeds, "time_ids": add_time_ids},
-            ).sample
-            loss = F.mse_loss(model_pred.float(), noise.float(), reduction="mean")
+        latents = latents.to(device=device, dtype=torch.float32)
+        noise = noise.to(device=device, dtype=torch.float32)
+        noisy_latents = noisy_latents.to(device=device, dtype=torch.float32)
+        prompt_embeds = prompt_embeds.to(device=device, dtype=torch.float32)
+        pooled_prompt_embeds = pooled_prompt_embeds.to(device=device, dtype=torch.float32)
+        add_time_ids = add_time_ids.to(device=device, dtype=torch.float32)
 
-        scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(lora_params, 1.0)
-        scaler.step(optimizer)
-        scaler.update()
+        assert torch.isfinite(latents).all(), "latents has NaN/Inf"
+        assert torch.isfinite(noise).all(), "noise has NaN/Inf"
+        assert torch.isfinite(noisy_latents).all(), "noisy_latents has NaN/Inf"
+
+        model_pred = pipe.unet(noisy_latents, timesteps, prompt_embeds, added_cond_kwargs={"text_embeds": pooled_prompt_embeds, "time_ids": add_time_ids}).sample
+
+        if not torch.isfinite(model_pred).all():
+            print(f"NaN/Inf in model_pred at step {step}")
+            succeed = False
+            break
+
+        loss = F.mse_loss(model_pred, noise, reduction="mean")
+
         optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(lora_params, 1.0)
+        optimizer.step()
         lr_scheduler.step()
-
-        global_step += 1
+        step += 1
         progress.update(1)
         progress.set_postfix({"loss": f"{loss.item():.4f}"})
 
     progress.close()
-
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    pipe.save_lora_weights(OUTPUT_DIR)
-    print(f"Saved LoRA to {OUTPUT_DIR}")
+    
+    if succeed:
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        pipe.save_lora_weights(
+            OUTPUT_DIR / "lora.safetensors",
+            unet_lora_layers=pipe.unet,
+        )
+        print(f"Saved LoRA to {OUTPUT_DIR / 'lora.safetensors'}")
 
 
 if __name__ == "__main__":

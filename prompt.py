@@ -1,4 +1,4 @@
-from diffusers import StableDiffusionXLPipeline, AutoPipelineForText2Image
+from diffusers import AutoPipelineForText2Image
 from transformers import CLIPTokenizer
 import torch, argparse, platform, pdb
 torch.backends.mps.allow_truncated_normal_ = True
@@ -9,11 +9,15 @@ LIGHT_BLUE = "\033[36m"
 RED = "\033[31m"
 RESET = "\033[0m"
 model_id = "models/sdxl-turbo"
-lora_id = "models/sidig-lora"
+lora_dir = "models/sdxl-turbo-lora"
+lora_weights = "lora.safetensors"
+GUIDANCE_SCALE = 1.0
+DIMENSION = 512
+INFER_STEPS = 4
 
 CLIP_TOKEN = "spaceisdirty"
 INSTRUCTIONS = CLIP_TOKEN + " " + (
-    ""
+    "Photorealistic, high resolution image, 4k, detailed, "
 )
 
 def get_num_tokens(str):
@@ -23,23 +27,24 @@ def get_num_tokens(str):
     return count
 
 def main(args):
+    pipe = AutoPipelineForText2Image.from_pretrained(model_id, torch_dtype=torch.float16)
     if args.sdxl:
-        pipe = AutoPipelineForText2Image.from_pretrained(model_id, torch_dtype=torch.float16)
-    else:
-        pipe = AutoPipelineForText2Image.from_pretrained(model_id, torch_dtype=torch.float16)
         try:
-            pipe.load_lora_weights(lora_id)
+            pipe.load_lora_weights(lora_dir, weight_name=lora_weights)
             pipe.fuse_lora()
+            print(f"{BLUE}Loaded LoRA from {lora_dir}/{lora_weights}{RESET}")
         except Exception as e:
-            print(f"{RED}Unable to load LoRA weights from {lora_id}: {e}{RESET}")
+            print(f"{RED}Unable to load LoRA weights from {lora_dir}: {e}{RESET}")
 
     # use "cuda" on NVIDIA, "mps" on Mac, "cpu" otherwise
-    if platform.system == "Windows":
-        pipe = pipe.to("cuda")  
-    elif platform.system == "Darwin":
+    system = platform.system()
+    if system == "Windows":
+        pipe = pipe.to("cuda")
+    elif system == "Darwin":
         pipe = pipe.to("mps")
     else:
         pipe = pipe.to("cpu")
+
 
     # if there is a saftey checker, turn it off. We're not children here. 
     if hasattr(pipe, "safety_checker") and pipe.safety_checker is not None:
@@ -63,9 +68,9 @@ def main(args):
         try:
             # choose between model params
             if args.sdxl:
-                result = pipe(prompt, height=1024, width=1024, num_inference_steps=1, guidance_scale=0.0)
+                result = pipe(prompt, height=DIMENSION, width=DIMENSION, num_inference_steps=INFER_STEPS, guidance_scale=GUIDANCE_SCALE)
             else:
-                result = pipe(prompt, height=512, width=512, num_inference_steps=1, guidance_scale=0.0)
+                result = pipe(prompt, height=DIMENSION, width=DIMENSION, num_inference_steps=INFER_STEPS, guidance_scale=GUIDANCE_SCALE)
 
             image = result.images[0]
 
@@ -80,4 +85,4 @@ if __name__ == "__main__":
     parser.add_argument("--sdxl", "-x", action="store_true", help="Use LoRA fine tuned SDXL-Turbo model")
     args = parser.parse_args()
     
-    # main(args)
+    main(args)
