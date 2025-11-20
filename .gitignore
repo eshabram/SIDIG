@@ -3,3 +3,4 @@ models/*
 images/*
 tools/
 **/*.zip
+**/*DS_Strore/

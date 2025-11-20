@@ -17,11 +17,11 @@ conda activate sidig
 
 2. Authenticate so you can fetch gated assets:
    ```shell
-   huggingface-cli login
+   hf login
    ```
 3. Pull the model files into your local `models/` directory:
    ```shell
-   huggingface-cli download stabilityai/sdxl-turbo --local-dir models/sdxl-turbo
+   hf download stabilityai/sdxl-turbo
    ```
 4. Reference that directory (for example `--model_path models/sdxl-turbo`) when running fine-tuning or inference scripts.
 
