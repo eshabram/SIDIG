@@ -1,4 +1,4 @@
-import json, torch, random
+import json, torch, random,sys, warnings
 from pathlib import Path
 import torch.nn.functional as F
 from PIL import Image
@@ -7,14 +7,12 @@ from tqdm.auto import tqdm
 from peft import LoraConfig
 from diffusers import DDPMScheduler, StableDiffusionXLPipeline
 from diffusers.optimization import get_scheduler
-from safetensors.torch import save_file
-
 
 Image.MAX_IMAGE_PIXELS = None
 IMAGES_DIR = Path("images")
 METADATA_FILE = Path("metadata/labels.jsonl")
-MODEL_PATH = Path("stabilityai/sdxl-turbo")
 OUTPUT_DIR = Path("models/sdxl-turbo-lora")
+MODEL_PATH = "stabilityai/sdxl-turbo"
 RESOLUTION = 1024
 TRAIN_BATCH_SIZE = 1
 MAX_STEPS = 1000
@@ -26,16 +24,11 @@ SEED = 42
 
 
 def attach_lora(unet, rank: int):
-    unet_lora_config = LoraConfig(
-        r=rank,
-        lora_alpha=rank,
-        target_modules=["to_k", "to_q", "to_v", "to_out.0"],
-        init_lora_weights="gaussian",
-    )
+    unet_lora_config = LoraConfig(r=rank, lora_alpha=rank, 
+                                  target_modules=["to_k", "to_q", "to_v", "to_out.0"], init_lora_weights="gaussian")
     unet.add_adapter(unet_lora_config)
     lora_params = [p for p in unet.parameters() if p.requires_grad]
     return lora_params
-
 
 
 def main():
@@ -51,7 +44,8 @@ def main():
     with METADATA_FILE.open() as fh:
         for raw_line in fh:
             data = json.loads(raw_line)
-            prompt = data.get("label", "").strip()
+            # use custom token prefix
+            prompt = f"spaceisdirty {data.get('label', '').strip()}"
             if not prompt:
                 continue
 
@@ -78,29 +72,17 @@ def main():
         raise ValueError("Need at least as many samples as the batch size.")
 
     transform = transforms.Compose(
-        [
-            transforms.Resize(RESOLUTION, interpolation=transforms.InterpolationMode.BICUBIC),
+        [   transforms.Resize(RESOLUTION, interpolation=transforms.InterpolationMode.BICUBIC),
             transforms.CenterCrop(RESOLUTION),
             transforms.ToTensor(),
             transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
-        ]
-    )
+        ])
 
-    device = torch.device(
-        "cuda" if torch.cuda.is_available()
-        else ("mps" if torch.backends.mps.is_available() else "cpu")
-    )
-
-    # Load pipeline as before
-    pipe = StableDiffusionXLPipeline.from_pretrained(
-        MODEL_PATH,
-        torch_dtype=torch.float16,   # keep this if you want encoders in fp16
-    ).to(device)
-
-    # Promote UNet + VAE to fp32 to avoid NaNs in latents
+    device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
+    # load pipline here
+    pipe = StableDiffusionXLPipeline.from_pretrained(MODEL_PATH, torch_dtype=torch.float16).to(device)
     pipe.unet.to(device=device, dtype=torch.float32)
     pipe.vae.to(device=device, dtype=torch.float32)
-
     pipe.vae.requires_grad_(False)
     pipe.unet.requires_grad_(False)
     pipe.text_encoder.requires_grad_(False)
@@ -110,6 +92,12 @@ def main():
     lora_params = attach_lora(pipe.unet, RANK)
     pipe.unet.train()
 
+    # OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    # out_path = OUTPUT_DIR / "lora.safetensors"
+    # pipe.unet.save_lora_adapter(OUTPUT_DIR, adapter_name="default", weight_name="lora.safetensors")
+    # print(f"Saved LoRA to {out_path}")
+    # sys.exit(0)
+    
     optimizer = torch.optim.AdamW(lora_params, lr=LEARNING_RATE, betas=(0.9, 0.999), weight_decay=1e-2)
     lr_scheduler = get_scheduler(LR_SCHEDULER, optimizer=optimizer, num_warmup_steps=LR_WARMUP_STEPS, num_training_steps=MAX_STEPS)
 
@@ -148,25 +136,14 @@ def main():
         pixel_values = torch.stack(pixel_values).to(device=device, dtype=pipe.vae.dtype)
 
         with torch.no_grad():
-            prompt_outputs = pipe.encode_prompt(
-                prompt=prompts,
-                device=device,
-                num_images_per_prompt=1,
-                do_classifier_free_guidance=False,
-            )
+            prompt_outputs = pipe.encode_prompt(prompt=prompts, device=device, num_images_per_prompt=1, do_classifier_free_guidance=False)
             prompt_embeds = prompt_outputs[0]
             pooled_prompt_embeds = prompt_outputs[2]
             latents = pipe.vae.encode(pixel_values).latent_dist.sample()
             latents = latents * pipe.vae.config.scaling_factor
 
         noise = torch.randn_like(latents)
-        timesteps = torch.randint(
-            0,
-            noise_scheduler.config.num_train_timesteps,
-            (latents.shape[0],),
-            device=device,
-            dtype=torch.long,
-        )
+        timesteps = torch.randint(0, noise_scheduler.config.num_train_timesteps, (latents.shape[0],), device=device, dtype=torch.long)
         noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
 
         add_time_ids = []
@@ -186,7 +163,8 @@ def main():
         assert torch.isfinite(noise).all(), "noise has NaN/Inf"
         assert torch.isfinite(noisy_latents).all(), "noisy_latents has NaN/Inf"
 
-        model_pred = pipe.unet(noisy_latents, timesteps, prompt_embeds, added_cond_kwargs={"text_embeds": pooled_prompt_embeds, "time_ids": add_time_ids}).sample
+        model_pred = pipe.unet(noisy_latents, timesteps, prompt_embeds, added_cond_kwargs={"text_embeds": pooled_prompt_embeds, 
+                                                                                           "time_ids": add_time_ids}).sample
 
         if not torch.isfinite(model_pred).all():
             print(f"NaN/Inf in model_pred at step {step}")
@@ -208,14 +186,14 @@ def main():
     
     if succeed:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        sd = pipe.unet.state_dict()
-        lora_sd = {k: v.to(torch.float16) for k, v in sd.items() if "lora" in k.lower()}
-        if not lora_sd:
-            raise RuntimeError("No LoRA tensors found in UNet; check LoraConfig / add_adapter.")
-        save_file(lora_sd, str(OUTPUT_DIR / "lora.safetensors"))
-        print(f"Saved LoRA to {OUTPUT_DIR / 'lora.safetensors'}")
+        out_path = OUTPUT_DIR / "lora.safetensors"
+        pipe.unet.save_lora_adapter(OUTPUT_DIR, adapter_name="default", weight_name="lora.safetensors")
+        print(f"Saved LoRA to {out_path}")
 
 
 
 if __name__ == "__main__":
     main()
+    from safetensors.torch import load_file
+    sd = load_file("models/sdxl-turbo-lora/lora.safetensors")
+    print(len(sd), list(sd.keys())[:5])

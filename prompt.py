@@ -1,23 +1,24 @@
 from diffusers import AutoPipelineForText2Image
 from transformers import CLIPTokenizer
 import safetensors.torch as st
-import torch, argparse, platform, pdb
+import torch, argparse, platform, pdb, warnings
 torch.backends.mps.allow_truncated_normal_ = True
 tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+
 
 BLUE = "\033[94m"
 LIGHT_BLUE = "\033[36m"
 RED = "\033[31m"
 RESET = "\033[0m"
 model_id = "stabilityai/sdxl-turbo"
-lora_dir = "models/sdxl-turbo-lora/lora.safetensors/"
-lora_weights = "pytorch_lora_weights.safetensors"
+lora_dir = "models/sdxl-turbo-lora"
+lora_weights = "lora.safetensors"
 GUIDANCE_SCALE = 1.0
 DIMENSION = 512
-INFER_STEPS = 2
+INFER_STEPS = 4
 
 CLIP_TOKEN = "spaceisdirty"
-INSTRUCTIONS =  CLIP_TOKEN + " " + (
+INSTRUCTIONS = CLIP_TOKEN + " " + (
     "Photorealistic, high resolution image, 4k, detailed, "
 )
 
@@ -32,13 +33,9 @@ def main(args):
 
     if args.lora:
         try:
-            # pipe.load_lora_weights(lora_dir, weight_name=lora_weights)
-            # pipe.fuse_lora()
-            sd = st.load_file(
-                "models/sdxl-turbo-lora/lora.safetensors/pytorch_lora_weights.safetensors"
-            )
-            pipe.unet.load_state_dict(sd, strict=False)
+            pipe.unet.load_lora_adapter(lora_dir, weight_name=lora_weights, adapter_name="default", prefix=None)
             print(f"{BLUE}Loaded LoRA from {lora_dir}/{lora_weights}{RESET}")
+            # print("active adapters:", pipe.unet.active_adapters)
         except Exception as e:
             print(f"{RED}Unable to load LoRA weights from {lora_dir}: {e}{RESET}")
 
