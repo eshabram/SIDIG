@@ -8,7 +8,7 @@ BLUE = "\033[94m"
 LIGHT_BLUE = "\033[36m"
 RED = "\033[31m"
 RESET = "\033[0m"
-model_id = "models/sdxl-turbo"
+model_id = "stabilityai/sdxl-turbo"
 lora_dir = "models/sdxl-turbo-lora"
 lora_weights = "lora.safetensors"
 GUIDANCE_SCALE = 1.0
@@ -27,7 +27,7 @@ def get_num_tokens(str):
     return count
 
 def main(args):
-    pipe = AutoPipelineForText2Image.from_pretrained(model_id, torch_dtype=torch.float16)
+    pipe = AutoPipelineForText2Image.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
     if args.sdxl:
         try:
             pipe.load_lora_weights(lora_dir, weight_name=lora_weights)

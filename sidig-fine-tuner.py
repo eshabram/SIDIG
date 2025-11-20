@@ -7,12 +7,13 @@ from tqdm.auto import tqdm
 from peft import LoraConfig
 from diffusers import DDPMScheduler, StableDiffusionXLPipeline
 from diffusers.optimization import get_scheduler
+from safetensors.torch import save_file
 
 
 Image.MAX_IMAGE_PIXELS = None
 IMAGES_DIR = Path("images")
 METADATA_FILE = Path("metadata/labels.jsonl")
-MODEL_PATH = Path("models/sdxl-turbo")
+MODEL_PATH = Path("stabilityai/sdxl-turbo")
 OUTPUT_DIR = Path("models/sdxl-turbo-lora")
 RESOLUTION = 1024
 TRAIN_BATCH_SIZE = 1
@@ -207,10 +208,11 @@ def main():
     
     if succeed:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        pipe.save_lora_weights(
-            OUTPUT_DIR / "lora.safetensors",
-            unet_lora_layers=pipe.unet,
-        )
+        sd = pipe.unet.state_dict()
+        lora_sd = {k: v.to(torch.float16) for k, v in sd.items() if "lora" in k.lower()}
+        if not lora_sd:
+            raise RuntimeError("No LoRA tensors found in UNet; check LoraConfig / add_adapter.")
+        save_file(lora_sd, str(OUTPUT_DIR / "lora.safetensors"))
         print(f"Saved LoRA to {OUTPUT_DIR / 'lora.safetensors'}")
 
 

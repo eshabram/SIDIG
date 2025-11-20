@@ -13,17 +13,7 @@ conda activate sidig
 ```
 
 ### Installing SDXL-Turbo
-1. Download the SDXL Turbo weights from Hugging Face: https://huggingface.co/stabilityai/sdxl-turbo (log in and accept the license if prompted).
-
-2. Authenticate so you can fetch gated assets:
-   ```shell
-   hf login
-   ```
-3. Pull the model files into your local `models/` directory:
-   ```shell
-   hf download stabilityai/sdxl-turbo
-   ```
-4. Reference that directory (for example `--model_path models/sdxl-turbo`) when running fine-tuning or inference scripts.
+When running the fine tune or prompt script, the sdxl-turbo model will be automatically downloaded and take up about 7gb.
 
 ### Run the Fine Tune
 To tune the model, run this command, pointing to the model you would like to tune:
