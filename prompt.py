@@ -1,5 +1,6 @@
 from diffusers import AutoPipelineForText2Image
 from transformers import CLIPTokenizer
+import safetensors.torch as st
 import torch, argparse, platform, pdb
 torch.backends.mps.allow_truncated_normal_ = True
 tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
@@ -9,14 +10,14 @@ LIGHT_BLUE = "\033[36m"
 RED = "\033[31m"
 RESET = "\033[0m"
 model_id = "stabilityai/sdxl-turbo"
-lora_dir = "models/sdxl-turbo-lora"
-lora_weights = "lora.safetensors"
+lora_dir = "models/sdxl-turbo-lora/lora.safetensors/"
+lora_weights = "pytorch_lora_weights.safetensors"
 GUIDANCE_SCALE = 1.0
 DIMENSION = 512
-INFER_STEPS = 4
+INFER_STEPS = 2
 
 CLIP_TOKEN = "spaceisdirty"
-INSTRUCTIONS = CLIP_TOKEN + " " + (
+INSTRUCTIONS =  CLIP_TOKEN + " " + (
     "Photorealistic, high resolution image, 4k, detailed, "
 )
 
@@ -28,10 +29,15 @@ def get_num_tokens(str):
 
 def main(args):
     pipe = AutoPipelineForText2Image.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
-    if args.sdxl:
+
+    if args.lora:
         try:
-            pipe.load_lora_weights(lora_dir, weight_name=lora_weights)
-            pipe.fuse_lora()
+            # pipe.load_lora_weights(lora_dir, weight_name=lora_weights)
+            # pipe.fuse_lora()
+            sd = st.load_file(
+                "models/sdxl-turbo-lora/lora.safetensors/pytorch_lora_weights.safetensors"
+            )
+            pipe.unet.load_state_dict(sd, strict=False)
             print(f"{BLUE}Loaded LoRA from {lora_dir}/{lora_weights}{RESET}")
         except Exception as e:
             print(f"{RED}Unable to load LoRA weights from {lora_dir}: {e}{RESET}")
@@ -45,6 +51,8 @@ def main(args):
     else:
         pipe = pipe.to("cpu")
 
+    print("unet device:", pipe.unet.device)
+    print("sample param dtype:", next(pipe.unet.parameters()).dtype)
 
     # if there is a saftey checker, turn it off. We're not children here. 
     if hasattr(pipe, "safety_checker") and pipe.safety_checker is not None:
@@ -66,12 +74,8 @@ def main(args):
         # combine token/instructions to prompt for more control
         prompt = f"{INSTRUCTIONS} {prompt}" 
         try:
-            # choose between model params
-            if args.sdxl:
-                result = pipe(prompt, height=DIMENSION, width=DIMENSION, num_inference_steps=INFER_STEPS, guidance_scale=GUIDANCE_SCALE)
-            else:
-                result = pipe(prompt, height=DIMENSION, width=DIMENSION, num_inference_steps=INFER_STEPS, guidance_scale=GUIDANCE_SCALE)
 
+            result = pipe(prompt, height=DIMENSION, width=DIMENSION, num_inference_steps=INFER_STEPS, guidance_scale=GUIDANCE_SCALE)
             image = result.images[0]
 
             image.show()
@@ -82,7 +86,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SpaceIsDirty Image Generator (SIDIG) prompt.")
-    parser.add_argument("--sdxl", "-x", action="store_true", help="Use LoRA fine tuned SDXL-Turbo model")
+    parser.add_argument("--lora", "-l", action="store_true", help="Use LoRA fine tuned SDXL-Turbo model")
     args = parser.parse_args()
     
     main(args)
