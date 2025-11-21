@@ -15,7 +15,7 @@ lora_dir = "models/sdxl-turbo-lora"
 lora_weights = "lora.safetensors"
 GUIDANCE_SCALE = 1.0
 DIMENSION = 512
-INFER_STEPS = 5
+INFER_STEPS = 4
 
 CLIP_TOKEN = "spaceisdirty"
 INSTRUCTIONS = ("Photorealistic, high resolution image, 4k, detailed, ")
@@ -85,6 +85,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SpaceIsDirty Image Generator (SIDIG) prompt.")
     parser.add_argument("--lora", "-l", action="store_true", help="Use LoRA fine tuned SDXL-Turbo model")
     parser.add_argument("--no-token", "-nt", action="store_true", help="Do not use CLIP token prefix in prompts")
+    parser.add_argument("--dimension", "-d", type=int, default=768, help="Image dimension (height and width)")
+    parser.add_argument("--steps", "-s", type=int, default=4, help="Number of inference steps")
+    parser.add_argument("--scale", "-g", type=float, default=1.0, help="Guidance scale")
     args = parser.parse_args()
     
+    GUIDANCE_SCALE = args.scale
+    DIMENSION = args.dimension - ( args.dimension % 8)
+    print(f"Using dimensions: {DIMENSION}x{DIMENSION}")
+    INFER_STEPS = args.steps
+
     main(args)
