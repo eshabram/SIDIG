@@ -15,9 +15,9 @@ OUTPUT_DIR = Path("models/sdxl-turbo-lora")
 MODEL_PATH = "stabilityai/sdxl-turbo"
 RESOLUTION = 1024
 TRAIN_BATCH_SIZE = 1
-MAX_STEPS = 1000
-LEARNING_RATE = 0.00001
-RANK = 16
+MAX_STEPS = 800
+LEARNING_RATE = 0.0002
+RANK = 32
 LR_SCHEDULER = "cosine"
 LR_WARMUP_STEPS = 100
 SEED = 42
@@ -91,12 +91,6 @@ def main():
 
     lora_params = attach_lora(pipe.unet, RANK)
     pipe.unet.train()
-
-    # OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    # out_path = OUTPUT_DIR / "lora.safetensors"
-    # pipe.unet.save_lora_adapter(OUTPUT_DIR, adapter_name="default", weight_name="lora.safetensors")
-    # print(f"Saved LoRA to {out_path}")
-    # sys.exit(0)
     
     optimizer = torch.optim.AdamW(lora_params, lr=LEARNING_RATE, betas=(0.9, 0.999), weight_decay=1e-2)
     lr_scheduler = get_scheduler(LR_SCHEDULER, optimizer=optimizer, num_warmup_steps=LR_WARMUP_STEPS, num_training_steps=MAX_STEPS)

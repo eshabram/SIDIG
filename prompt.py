@@ -17,7 +17,7 @@ GUIDANCE_SCALE = 1.0
 DIMENSION = 512
 INFER_STEPS = 4
 
-CLIP_TOKEN = "spaceisdirty"
+CLIP_TOKEN = ""
 INSTRUCTIONS = CLIP_TOKEN + " " + (
     "Photorealistic, high resolution image, 4k, detailed, "
 )
