@@ -41,7 +41,7 @@ def main(args):
 
     # use "cuda" on NVIDIA, "mps" on Mac, "cpu" otherwise
     system = platform.system()
-    if system == "Windows":
+    if torch.cuda.is_available():
         pipe = pipe.to("cuda")
     elif system == "Darwin":
         pipe = pipe.to("mps")
