@@ -15,12 +15,10 @@ lora_dir = "models/sdxl-turbo-lora"
 lora_weights = "lora.safetensors"
 GUIDANCE_SCALE = 1.0
 DIMENSION = 512
-INFER_STEPS = 4
+INFER_STEPS = 5
 
-CLIP_TOKEN = ""
-INSTRUCTIONS = CLIP_TOKEN + " " + (
-    "Photorealistic, high resolution image, 4k, detailed, "
-)
+CLIP_TOKEN = "spaceisdirty"
+INSTRUCTIONS = ("Photorealistic, high resolution image, 4k, detailed, ")
 
 def get_num_tokens(str):
     tokens = tokenizer.encode(str, add_special_tokens=True)
@@ -39,11 +37,10 @@ def main(args):
         except Exception as e:
             print(f"{RED}Unable to load LoRA weights from {lora_dir}: {e}{RESET}")
 
-    # use "cuda" on NVIDIA, "mps" on Mac, "cpu" otherwise
-    system = platform.system()
-    if system == "Windows":
+    # use "cuda" on NVIDIA, "mps" on Mac, "cpu" otherwise. WLS is cuda.
+    if torch.cuda.is_available():
         pipe = pipe.to("cuda")
-    elif system == "Darwin":
+    elif torch.backends.mps.is_available():
         pipe = pipe.to("mps")
     else:
         pipe = pipe.to("cpu")
@@ -69,7 +66,10 @@ def main(args):
             continue
         
         # combine token/instructions to prompt for more control
-        prompt = f"{INSTRUCTIONS} {prompt}" 
+        if not args.no_token:
+            prompt = f"{CLIP_TOKEN} {INSTRUCTIONS} {prompt}"
+        else:
+            prompt = f"{INSTRUCTIONS} {prompt}" 
         try:
 
             result = pipe(prompt, height=DIMENSION, width=DIMENSION, num_inference_steps=INFER_STEPS, guidance_scale=GUIDANCE_SCALE)
@@ -84,6 +84,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SpaceIsDirty Image Generator (SIDIG) prompt.")
     parser.add_argument("--lora", "-l", action="store_true", help="Use LoRA fine tuned SDXL-Turbo model")
+    parser.add_argument("--no-token", "-nt", action="store_true", help="Do not use CLIP token prefix in prompts")
     args = parser.parse_args()
     
     main(args)

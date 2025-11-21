@@ -7,3 +7,4 @@ tools/
 !models/sdxl-turbo-lora/
 models/sdxl-turbo-lora/*
 !models/sdxl-turbo-lora/.gitkeep
+old/*
