@@ -1,4 +1,4 @@
-import json, torch, random,sys, warnings
+import json, torch, random,sys, warnings, argparse
 from pathlib import Path
 import torch.nn.functional as F
 from PIL import Image
@@ -23,15 +23,14 @@ LR_WARMUP_STEPS = 100
 SEED = 42
 
 
-def attach_lora(unet, rank: int):
-    unet_lora_config = LoraConfig(r=rank, lora_alpha=rank, 
-                                  target_modules=["to_k", "to_q", "to_v", "to_out.0"], init_lora_weights="gaussian")
-    unet.add_adapter(unet_lora_config)
-    lora_params = [p for p in unet.parameters() if p.requires_grad]
-    return lora_params
+def attach_lora(pipe, rank: int):
+    unet_lora_config = LoraConfig(r=rank, lora_alpha=rank, target_modules=["to_k", "to_q", "to_v", "to_out.0"],
+                                   init_lora_weights="gaussian",)
+    pipe.unet.add_adapter(unet_lora_config)
+    return [p for p in pipe.unet.parameters() if p.requires_grad]
 
 
-def main():
+def main(args):
     succeed = True
     random.seed(SEED)
     torch.manual_seed(SEED)
@@ -45,7 +44,7 @@ def main():
         for raw_line in fh:
             data = json.loads(raw_line)
             # use custom token prefix
-            prompt = f"spaceisdirty {data.get('label', '').strip()}"
+            prompt = f"{args.token} {data.get('description', '').strip()}"
             if not prompt:
                 continue
 
@@ -66,7 +65,7 @@ def main():
             samples.append({"prompt": prompt, "path": image_path})
 
     if not samples:
-        raise ValueError("No training samples found. Check images and metadata paths.")
+        raise ValueError("No training samples found. Where are the images?")
 
     if len(samples) < TRAIN_BATCH_SIZE:
         raise ValueError("Need at least as many samples as the batch size.")
@@ -79,7 +78,7 @@ def main():
         ])
 
     device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
-    # load pipline here
+    # load pipeline here
     pipe = StableDiffusionXLPipeline.from_pretrained(MODEL_PATH, torch_dtype=torch.float16).to(device)
     pipe.unet.to(device=device, dtype=torch.float32)
     pipe.vae.to(device=device, dtype=torch.float32)
@@ -89,7 +88,7 @@ def main():
     pipe.text_encoder_2.requires_grad_(False)
     pipe.unet.enable_gradient_checkpointing()
 
-    lora_params = attach_lora(pipe.unet, RANK)
+    lora_params = attach_lora(pipe, RANK)
     pipe.unet.train()
     
     optimizer = torch.optim.AdamW(lora_params, lr=LEARNING_RATE, betas=(0.9, 0.999), weight_decay=1e-2)
@@ -180,14 +179,25 @@ def main():
     
     if succeed:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        out_path = OUTPUT_DIR / "lora.safetensors"
-        pipe.unet.save_lora_adapter(OUTPUT_DIR, adapter_name="default", weight_name="lora.safetensors")
+        out_path = OUTPUT_DIR /  OUTPUT_NAME
+        pipe.unet.save_lora_adapter(OUTPUT_DIR, adapter_name="default", weight_name=OUTPUT_NAME)
         print(f"Saved LoRA to {out_path}")
 
 
 
 if __name__ == "__main__":
-    main()
+    argparser = argparse.ArgumentParser(description="Fine-tune LoRA for Stable Diffusion XL Turbo")
+    argparser.add_argument("--data-dir", "-d", type=str, default="images", help="Number of training steps")
+    argparser.add_argument("--output-name", "-o", type=str, default="lora", 
+                          help="Output filename for LoRA weights")
+    argparser.add_argument("--token", "-t", type=str, default="spaceisdirty", help="Custom token prefix for training")
+    args = argparser.parse_args()
+
+    IMAGES_DIR = Path(args.data_dir)
+    METADATA_FILE = Path(args.data_dir) / "labels.jsonl"
+    OUTPUT_NAME = f"{args.output_name}.safetensors"
+    main(args)
+    # check the lora fine tune succeded
     from safetensors.torch import load_file
-    sd = load_file("models/sdxl-turbo-lora/lora.safetensors")
+    sd = load_file(OUTPUT_DIR / OUTPUT_NAME)
     print(len(sd), list(sd.keys())[:5])
