@@ -11,13 +11,9 @@ from diffusers.optimization import get_scheduler
 Image.MAX_IMAGE_PIXELS = None
 IMAGES_DIR = Path("images")
 METADATA_FILE = Path("metadata/labels.jsonl")
-OUTPUT_DIR = Path("models/sdxl-turbo-lora")
-MODEL_PATH = "stabilityai/sdxl-turbo"
+OUTPUT_DIR = Path("models/sdxl-lora")
 RESOLUTION = 1024
 TRAIN_BATCH_SIZE = 1
-MAX_STEPS = 800
-LEARNING_RATE = 0.0002
-RANK = 32
 LR_SCHEDULER = "cosine"
 LR_WARMUP_STEPS = 100
 SEED = 42
@@ -79,7 +75,7 @@ def main(args):
 
     device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
     # load pipeline here
-    pipe = StableDiffusionXLPipeline.from_pretrained(MODEL_PATH, torch_dtype=torch.float16).to(device)
+    pipe = StableDiffusionXLPipeline.from_pretrained(args.model_path, torch_dtype=torch.float16).to(device)
     pipe.unet.to(device=device, dtype=torch.float32)
     pipe.vae.to(device=device, dtype=torch.float32)
     pipe.vae.requires_grad_(False)
@@ -88,11 +84,11 @@ def main(args):
     pipe.text_encoder_2.requires_grad_(False)
     pipe.unet.enable_gradient_checkpointing()
 
-    lora_params = attach_lora(pipe, RANK)
+    lora_params = attach_lora(pipe, args.rank)
     pipe.unet.train()
     
-    optimizer = torch.optim.AdamW(lora_params, lr=LEARNING_RATE, betas=(0.9, 0.999), weight_decay=1e-2)
-    lr_scheduler = get_scheduler(LR_SCHEDULER, optimizer=optimizer, num_warmup_steps=LR_WARMUP_STEPS, num_training_steps=MAX_STEPS)
+    optimizer = torch.optim.AdamW(lora_params, lr=args.lr, betas=(0.9, 0.999), weight_decay=1e-2)
+    lr_scheduler = get_scheduler(LR_SCHEDULER, optimizer=optimizer, num_warmup_steps=LR_WARMUP_STEPS, num_training_steps=args.steps)
 
     noise_scheduler = DDPMScheduler.from_config(pipe.scheduler.config)
     pipe.scheduler = noise_scheduler
@@ -103,9 +99,9 @@ def main(args):
     cursor = 0
     step = 0
 
-    progress = tqdm(total=MAX_STEPS, desc="Training LoRA", dynamic_ncols=True)
+    progress = tqdm(total=args.steps, desc="Training LoRA", dynamic_ncols=True)
 
-    while step < MAX_STEPS:
+    while step < args.steps:
         batch_info = []
         while len(batch_info) < TRAIN_BATCH_SIZE:
             if cursor >= len(order):
@@ -186,16 +182,22 @@ def main(args):
 
 
 if __name__ == "__main__":
-    argparser = argparse.ArgumentParser(description="Fine-tune LoRA for Stable Diffusion XL Turbo")
-    argparser.add_argument("--data-dir", "-d", type=str, default="images", help="Number of training steps")
-    argparser.add_argument("--output-name", "-o", type=str, default="lora", 
+    parser = argparse.ArgumentParser(description="Fine-tune LoRA for Stable Diffusion XL Turbo")
+    parser.add_argument("--data-dir", "-d", type=str, default="images/sidig-images", help="Number of training steps")
+    parser.add_argument("--model-path", "-m", type=str, default="stabilityai/stable-diffusion-xl-base-1.0", 
+                        help="Pretrained model path")
+    parser.add_argument("--output-name", "-o", type=str, default="lora", 
                           help="Output filename for LoRA weights")
-    argparser.add_argument("--token", "-t", type=str, default="spaceisdirty", help="Custom token prefix for training")
-    args = argparser.parse_args()
+    parser.add_argument("--token", "-t", type=str, default="spaceisdirty", help="Custom token prefix for training")
+    parser.add_argument("--steps", "-s", type=int, default=800, help="Number of training steps")
+    parser.add_argument("--lr", "-l", type=float, default=0.0002, help="Learning rate")
+    parser.add_argument("--rank", "-r", type=int, default=32, help="LoRA rank")
+    args = parser.parse_args()
 
     IMAGES_DIR = Path(args.data_dir)
     METADATA_FILE = Path(args.data_dir) / "labels.jsonl"
     OUTPUT_NAME = f"{args.output_name}.safetensors"
+
     main(args)
     # check the lora fine tune succeded
     from safetensors.torch import load_file

@@ -1,9 +1,9 @@
 **/*AGENTS.md
+**/*.DS_Store
 models/*
 images/*
 tools/
 **/*.zip
-**/*DS_Strore/
 !models/sdxl-turbo-lora/
 models/sdxl-turbo-lora/*
 !models/sdxl-turbo-lora/.gitkeep
