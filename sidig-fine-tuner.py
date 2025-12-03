@@ -184,13 +184,13 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fine-tune LoRA for Stable Diffusion XL Turbo")
     parser.add_argument("--data-dir", "-d", type=str, default="images/sidig-images", help="Number of training steps")
-    parser.add_argument("--model-path", "-m", type=str, default="stabilityai/stable-diffusion-xl-base-1.0", 
+    parser.add_argument("--model-path", "-m", type=str, default="stabilityai/sdxl-turbo", 
                         help="Pretrained model path")
     parser.add_argument("--output-name", "-o", type=str, default="lora", 
                           help="Output filename for LoRA weights")
     parser.add_argument("--token", "-t", type=str, default="spaceisdirty", help="Custom token prefix for training")
     parser.add_argument("--steps", "-s", type=int, default=800, help="Number of training steps")
-    parser.add_argument("--lr", "-l", type=float, default=0.0002, help="Learning rate")
+    parser.add_argument("--lr", "-l", type=float, default=0.0001, help="Learning rate")
     parser.add_argument("--rank", "-r", type=int, default=32, help="LoRA rank")
     args = parser.parse_args()
 

@@ -10,14 +10,12 @@ BLUE = "\033[94m"
 LIGHT_BLUE = "\033[36m"
 RED = "\033[31m"
 RESET = "\033[0m"
-model_id = "stabilityai/sdxl-turbo"
-lora_dir = "models/sdxl-turbo-lora"
+lora_dir = "models/sdxl-lora"
 lora_weights = "lora.safetensors"
 GUIDANCE_SCALE = 1.0
 DIMENSION = 512
 INFER_STEPS = 4
 
-CLIP_TOKEN = "spaceisdirty"
 INSTRUCTIONS = ("Photorealistic, high resolution image, 4k, detailed, ")
 
 def get_num_tokens(str):
@@ -27,13 +25,13 @@ def get_num_tokens(str):
     return count
 
 def main(args):
-    pipe = AutoPipelineForText2Image.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
+    pipe = AutoPipelineForText2Image.from_pretrained(args.model_id, torch_dtype=torch.float16, variant="fp16")
 
     if args.lora:
         try:
-            pipe.unet.load_lora_adapter(lora_dir, weight_name=lora_weights, adapter_name="default", prefix=None)
+            pipe.unet.load_lora_adapter(lora_dir, weight_name=args.lora_name, adapter_name="default", prefix=None)
             pipe.unet.set_adapters("default", weights=[args.heat])
-            print(f"{BLUE}Loaded LoRA from {lora_dir}/{lora_weights}{RESET}")
+            print(f"{BLUE}Loaded LoRA from {lora_dir}/{args.lora_name}{RESET}")
             # print("active adapters:", pipe.unet.active_adapters)
         except Exception as e:
             print(f"{RED}Unable to load LoRA weights from {lora_dir}: {e}{RESET}")
@@ -62,15 +60,16 @@ def main(args):
             break
         elif prompt == "":
             continue
-        elif get_num_tokens(prompt) + get_num_tokens(INSTRUCTIONS) > 77:
+        elif get_num_tokens(prompt) + get_num_tokens(INSTRUCTIONS) + get_num_tokens(args.token) > 77:
             print(f"{RED}Prompt is too long. Use less tokens.{RESET}")
             continue
         
         # combine token/instructions to prompt for more control
         if not args.no_token:
-            prompt = f"{CLIP_TOKEN} {INSTRUCTIONS} {prompt}"
+            prompt = f"{args.token} {INSTRUCTIONS} {prompt}"
         else:
             prompt = f"{INSTRUCTIONS} {prompt}" 
+
         try:
 
             result = pipe(prompt, height=DIMENSION, width=DIMENSION, num_inference_steps=INFER_STEPS, guidance_scale=GUIDANCE_SCALE)
@@ -84,10 +83,10 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SpaceIsDirty Image Generator (SIDIG) prompt.")
-    parser.add_argument("--lora", "-l", action="store_true", help="Use LoRA fine tuned SDXL-Turbo model")
+    parser.add_argument("--lora", "-l", action="store_true", help="Use LoRA fine tuned SDXL model")
     parser.add_argument("--lora-name", "-n", type=str, default="lora.safetensors", 
-                        help="LoRA weight filename in models/sdxl-turbo-lora")
-    parser.add_argument("--model-path", "-m", type=str, default="stabilityai/stable-diffusion-xl-base-1.0", help="Pretrained model path")
+                        help="LoRA weight filename in models/sdxl-lora")
+    parser.add_argument("--model-id", "-m", type=str, default="stabilityai/sdxl-turbo", help="Pretrained model path")
     parser.add_argument("--no-token", "-nt", action="store_true", help="Do not use CLIP token prefix in prompts")
     parser.add_argument("--dimension", "-d", type=int, default=768, help="Image dimension (height and width)")
     parser.add_argument("--steps", "-s", type=int, default=4, help="Number of inference steps")
@@ -100,5 +99,4 @@ if __name__ == "__main__":
     DIMENSION = args.dimension - ( args.dimension % 8)
     print(f"Using dimensions: {DIMENSION}x{DIMENSION}")
     INFER_STEPS = args.steps
-    lora_weights = args.lora_name
     main(args)
