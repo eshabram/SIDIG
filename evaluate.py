@@ -32,7 +32,7 @@ def set_device_and_optimizations(pipe):
     elif torch.backends.mps.is_available():
         pipe = pipe.to("mps")
         device = "mps"
-    
+
     return device
 
 def create_prompts():
@@ -68,24 +68,20 @@ def save_images(images, prompts, prefix):
 
         pil_img.save(os.path.join(OUTPUT_DIR, filename))
 
-def main():
-    pipe = AutoPipelineForText2Image.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
-    device = set_device_and_optimizations(pipe)
-
-    pipe.unet.load_lora_adapter(lora_dir, weight_name=lora_weights, adapter_name="default", prefix=None)
-    pipe.unet.set_adapters("default", weights=[HEAT])
-
+def clip_evaluation(pipe):
     prompts, prompts_with_lora_token = create_prompts()
 
     # generate images with the LoRA
-    images_lora = pipe(prompts_with_lora_token, height=DIMENSION, width=DIMENSION, num_inference_steps=INFER_STEPS, guidance_scale=GUIDANCE_SCALE, num_images_per_prompt=1, output_type="np").images
+    generator = torch.Generator("cuda").manual_seed(1234)
+    images_lora = pipe(prompts_with_lora_token, height=DIMENSION, width=DIMENSION, num_inference_steps=INFER_STEPS, guidance_scale=GUIDANCE_SCALE, num_images_per_prompt=1, output_type="np", generator=generator).images
     print("LoRA images generated")
     save_images(images_lora, prompts, "lora")
 
     # disable the LoRA
     pipe.unet.set_adapters([])
     # generate images with the base SD model
-    images_base = pipe(prompts, height=DIMENSION, width=DIMENSION, num_inference_steps=INFER_STEPS, guidance_scale=GUIDANCE_SCALE, num_images_per_prompt=1, output_type="np").images
+    generator = torch.Generator("cuda").manual_seed(1234)
+    images_base = pipe(prompts, height=DIMENSION, width=DIMENSION, num_inference_steps=INFER_STEPS, guidance_scale=GUIDANCE_SCALE, num_images_per_prompt=1, output_type="np", generator=generator).images
     print("Base Stable Diffusion images generated")
     save_images(images_base, prompts, "base")
 
@@ -95,6 +91,19 @@ def main():
     base_clip_score = calculate_clip_score(clip_score_fn, images_base, prompts)
     print(f"LoRA CLIP score: {lora_clip_score}")
     print(f"Base CLIP score: {base_clip_score}")
+
+    return images_lora
+
+
+def main():
+    pipe = AutoPipelineForText2Image.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
+    device = set_device_and_optimizations(pipe)
+    print(device)
+
+    pipe.unet.load_lora_adapter(lora_dir, weight_name=lora_weights, adapter_name="default", prefix=None)
+    pipe.unet.set_adapters("default", weights=[HEAT])
+
+    images_lora = clip_evaluation(pipe)
 
 
 if __name__ == "__main__":
