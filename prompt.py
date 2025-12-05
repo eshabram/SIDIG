@@ -12,9 +12,6 @@ RED = "\033[31m"
 RESET = "\033[0m"
 lora_dir = "models/sdxl-lora"
 lora_weights = "lora.safetensors"
-GUIDANCE_SCALE = 1.0
-DIMENSION = 512
-INFER_STEPS = 4
 
 INSTRUCTIONS = ("Photorealistic, high resolution image, 4k, detailed, ")
 
@@ -72,7 +69,7 @@ def main(args):
 
         try:
 
-            result = pipe(prompt, height=DIMENSION, width=DIMENSION, num_inference_steps=INFER_STEPS, guidance_scale=GUIDANCE_SCALE)
+            result = pipe(prompt, height=args.dimension, width=args.dimension, num_inference_steps=args.steps, guidance_scale=args.scale)
             image = result.images[0]
 
             image.show()
@@ -95,8 +92,5 @@ if __name__ == "__main__":
     parser.add_argument("--heat", "-ht", type=float, default=1.0, help="LoRA heat scaling factor")
     args = parser.parse_args()
     
-    GUIDANCE_SCALE = args.scale
-    DIMENSION = args.dimension - ( args.dimension % 8)
-    print(f"Using dimensions: {DIMENSION}x{DIMENSION}")
-    INFER_STEPS = args.steps
+    print(f"Using dimensions: {args.dimension}x{args.dimension}")
     main(args)

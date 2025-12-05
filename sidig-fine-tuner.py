@@ -14,8 +14,8 @@ METADATA_FILE = Path("metadata/labels.jsonl")
 OUTPUT_DIR = Path("models/sdxl-lora")
 RESOLUTION = 1024
 TRAIN_BATCH_SIZE = 1
-LR_SCHEDULER = "cosine"
-LR_WARMUP_STEPS = 100
+LR_SCHEDULER = "constant"
+LR_WARMUP_STEPS = 0
 SEED = 42
 
 
@@ -87,11 +87,10 @@ def main(args):
     lora_params = attach_lora(pipe, args.rank)
     pipe.unet.train()
     
-    optimizer = torch.optim.AdamW(lora_params, lr=args.lr, betas=(0.9, 0.999), weight_decay=1e-2)
+    optimizer = torch.optim.AdamW(lora_params, lr=args.lr, betas=(0.9, 0.999), weight_decay=0.0)
     lr_scheduler = get_scheduler(LR_SCHEDULER, optimizer=optimizer, num_warmup_steps=LR_WARMUP_STEPS, num_training_steps=args.steps)
 
     noise_scheduler = DDPMScheduler.from_config(pipe.scheduler.config)
-    pipe.scheduler = noise_scheduler
 
     order = list(range(len(samples)))
     random.shuffle(order)
@@ -137,8 +136,11 @@ def main(args):
 
         add_time_ids = []
         for size in original_sizes:
-            h, w = size
-            add_time_ids.append([h, w, RESOLUTION, RESOLUTION, 0, 0])
+            orig_h, orig_w = size
+            crop_top, crop_left = 0, 0
+            target_h, target_w = RESOLUTION, RESOLUTION
+            add_time_ids.append([orig_h, orig_w, crop_top, crop_left, target_h, target_w])
+
         add_time_ids = torch.tensor(add_time_ids, device=device, dtype=prompt_embeds.dtype)
 
         latents = latents.to(device=device, dtype=torch.float32)
@@ -191,13 +193,13 @@ if __name__ == "__main__":
     parser.add_argument("--token", "-t", type=str, default="spaceisdirty", help="Custom token prefix for training")
     parser.add_argument("--steps", "-s", type=int, default=800, help="Number of training steps")
     parser.add_argument("--lr", "-l", type=float, default=0.0001, help="Learning rate")
-    parser.add_argument("--rank", "-r", type=int, default=32, help="LoRA rank")
+    parser.add_argument("--rank", "-r", type=int, default=16, help="LoRA rank")
     args = parser.parse_args()
 
     IMAGES_DIR = Path(args.data_dir)
     METADATA_FILE = Path(args.data_dir) / "labels.jsonl"
     OUTPUT_NAME = f"{args.output_name}.safetensors"
-
+    # LR_WARMUP_STEPS = max(20, args.steps // 20)
     main(args)
     # check the lora fine tune succeded
     from safetensors.torch import load_file
