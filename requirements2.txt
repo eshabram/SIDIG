@@ -1,0 +1,13 @@
+# Torchmetrics
+torchmetrics        # 1.8.2
+
+# Hugging Face / Diffusers ecosystem
+diffusers           # 0.35.2
+transformers        # 4.57.3
+accelerate          # 1.12.0
+peft                # 0.18.0
+safetensors         # 0.7.0
+
+# Utilities
+pillow              # 11.3.0
+tqdm                # 4.67.1
