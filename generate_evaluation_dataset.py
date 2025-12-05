@@ -10,7 +10,7 @@ model_id = "stabilityai/sdxl-turbo"
 lora_dir = "models/sdxl-turbo-lora"
 lora_weights = "lora.safetensors"
 GUIDANCE_SCALE = 1.0
-DIMENSION = 768
+DIMENSION = 512
 INFER_STEPS = 4
 HEAT = 1.0
 OUTPUT_DIR = "output"
@@ -50,29 +50,23 @@ def create_prompts():
             f.write(item + '\n')
 
     prompts_with_lora_token = [
-        f"{CLIP_TOKEN} {prompt}" for prompt in prompts
+        f"{CLIP_TOKEN} {INSTRUCTIONS} {prompt}" for prompt in prompts
     ]
 
     return prompts, prompts_with_lora_token
 
-def calculate_clip_score(clip_score_fn, images, prompts):
-    images_int = (images * 255).astype("uint8")
-    output_clip_score = clip_score_fn(torch.from_numpy(images_int).permute(0, 3, 1, 2), prompts).detach()
-    return round(float(output_clip_score), 4)
-
 def save_images(images, prompts, prefix):
-    for i, (img, prompt) in enumerate(zip(images, prompts)):
-        if img.dtype != np.uint8:
-            img_uint8 = (img * 255).astype(np.uint8)
+    for i, (image, prompt) in enumerate(zip(images, prompts)):
+        if image.dtype != np.uint8:
+            image_uint8 = (image * 255).astype(np.uint8)
         else:
-            img_uint8 = img
+            image_uint8 = image
 
-        pil_img = Image.fromarray(img_uint8)
+        pil_img = Image.fromarray(image_uint8)
 
         safe_name = "".join(c if c.isalnum() else "_" for c in prompt[:28])
         partial_filename = f"{prefix}_{i}_{safe_name}"
         filename = f"{partial_filename}.png"
-        np_filename = f"{partial_filename}.npy"
 
         pil_img.save(os.path.join(IMAGES_DIR, filename))
 
