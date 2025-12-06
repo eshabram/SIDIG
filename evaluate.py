@@ -7,9 +7,11 @@ import numpy as np
 import os
 import t2v_metrics
 import re
+from collections import defaultdict
+from pprint import pprint
 
 OUTPUT_DIR = "output"
-IMAGES_DIR = os.path.join(OUTPUT_DIR, "evaluation-images")
+IMAGES_DIR = os.path.join(OUTPUT_DIR, "base-images")
 NP_DIR = os.path.join(OUTPUT_DIR, "evaluation-np")
 
 def set_device_and_optimizations(pipe):
@@ -70,8 +72,33 @@ def load_pngs():
     # Convert to full paths
     png_base = [os.path.join(IMAGES_DIR, f) for f in base_files]
     png_lora = [os.path.join(IMAGES_DIR, f) for f in lora_files]
+    print(png_lora)
 
     return png_base, png_lora
+
+# Used for calculating CLIP Scores of multiple configurations at once
+# Used with multiple configurations generated from inference_settings_tuning.py
+def load_multiconfig_pngs():
+    pattern = re.compile(r"^(\d+)_.*_(.+)\.png$")
+    prefix_dict = defaultdict(list)
+
+    for fname in os.listdir(IMAGES_DIR):
+        match = pattern.match(fname)
+        if not match:
+            continue
+
+        index = int(match.group(1))
+        prefix = match.group(2)
+
+        full_path = os.path.join(IMAGES_DIR, fname)
+        prefix_dict[prefix].append((index, full_path))
+
+    # Sort each prefix group by image index
+    for prefix in prefix_dict:
+        prefix_dict[prefix].sort(key=lambda x: x[0])
+        prefix_dict[prefix] = [p for _, p in prefix_dict[prefix]]
+
+    return dict(prefix_dict)
 
 def clip_evaluation(images_base, images_lora, prompts):
     clip_score_fn = partial(clip_score, model_name_or_path="openai/clip-vit-base-patch16")
@@ -100,18 +127,47 @@ def vqa_evaluation(images_base, images_lora, prompts):
     for i, (image, prompt) in enumerate(zip(images_base, prompts)):
         score = clip_flant5_score(images=[image], texts=[prompt])
         scores_base.append(score)
-    print("VQA (base) average: ", average_vqa_score(scores_base))
 
     scores_lora = []
     for i, (image, prompt) in enumerate(zip(images_lora, prompts)):
         score = clip_flant5_score(images=[image], texts=[prompt])
         scores_lora.append(score)
 
+    print(prompts)
+
     print("VQA (base) average: ", average_vqa_score(scores_base))
     print("VQA (lora) average: ", average_vqa_score(scores_lora))
 
     print("VQA (base): ", scores_base)
     print("VQA (lora): ", scores_lora)
+
+def vqa_lora(images_lora, prompts):
+    clip_flant5_score = t2v_metrics.VQAScore(model="clip-flant5-xl")
+
+    prefix_scores = {}
+    for prefix, image_paths in images_lora.items():
+        scores = []
+        for (image, prompt) in zip(image_paths, prompts):
+            score = clip_flant5_score(images=[image], texts=[prompt])
+            scores.append(score)
+        average_score = average_vqa_score(scores)
+        print(f"{prefix} score: ", average_score)
+        prefix_scores[prefix] = average_score
+
+    sorted_results = sorted(
+        prefix_scores.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    top_k = 0
+    print("\n=== Ranked Results (Highest → Lowest) ===")
+    if top_k == 0:
+        for prefix, score in sorted_results:
+            print(f"{prefix}: {score}")
+    else:
+        for prefix, score in sorted_results[:top_k]:
+            print(f"{prefix}: {score}")
 
 def main():
     images_base, images_lora = load_images()
@@ -121,6 +177,9 @@ def main():
 
     png_base, png_lora = load_pngs()
     vqa_evaluation(png_base, png_lora, prompts)
+
+    # png_configs = load_multiconfig_pngs()
+    # vqa_lora(png_configs, prompts)
 
 if __name__ == "__main__":
     main()
