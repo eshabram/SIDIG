@@ -9,10 +9,13 @@ import t2v_metrics
 import re
 from collections import defaultdict
 from pprint import pprint
+from math import ceil
+PROGRESS_PRINT = True
 
 OUTPUT_DIR = "output"
-IMAGES_DIR = os.path.join(OUTPUT_DIR, "base-images")
+IMAGES_DIR = os.path.join(OUTPUT_DIR, "evaluation-images")
 NP_DIR = os.path.join(OUTPUT_DIR, "evaluation-np")
+BATCH_SIZE = 4
 
 def set_device_and_optimizations(pipe):
     device = "cpu"
@@ -33,12 +36,29 @@ def set_device_and_optimizations(pipe):
 
 def calculate_clip_score(clip_score_fn, images, prompts):
     images_int = (images * 255).astype("uint8")
-    output_clip_score = clip_score_fn(torch.from_numpy(images_int).permute(0, 3, 1, 2), prompts).detach()
-    return round(float(output_clip_score), 4)
+    num_batches = ceil(len(prompts) / BATCH_SIZE)
+    weighted_sum = 0.0
+    total_count = 0
+
+    for i in range(num_batches):
+        batch_prompts = prompts[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
+        batch_images = images_int[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
+        output_clip_score = clip_score_fn(torch.from_numpy(batch_images).permute(0, 3, 1, 2), batch_prompts).detach()
+
+        batch_count = len(batch_prompts)
+        weighted_sum += float(output_clip_score) * batch_count
+        total_count += batch_count
+        if PROGRESS_PRINT:
+            print("CLIP score calculated up to image ", total_count)
+
+    final_score = weighted_sum / total_count
+
+    return round(float(final_score), 4)
 
 def load_images():
     images_base = np.load(os.path.join(NP_DIR, "images_base.npy"))
     images_lora = np.load(os.path.join(NP_DIR, "images_lora.npy"))
+    print("npy images loaded: ", images_lora.shape[0])
     return images_base, images_lora
 
 def load_prompts():
@@ -72,7 +92,7 @@ def load_pngs():
     # Convert to full paths
     png_base = [os.path.join(IMAGES_DIR, f) for f in base_files]
     png_lora = [os.path.join(IMAGES_DIR, f) for f in lora_files]
-    print(png_lora)
+    print("pngs loaded: ", len(png_lora))
 
     return png_base, png_lora
 
@@ -105,10 +125,10 @@ def clip_evaluation(images_base, images_lora, prompts):
 
     lora_clip_score = calculate_clip_score(clip_score_fn, images_lora, prompts)
     base_clip_score = calculate_clip_score(clip_score_fn, images_base, prompts)
-    print(f"LoRA CLIP score: {lora_clip_score}")
     print(f"Base CLIP score: {base_clip_score}")
+    print(f"LoRA CLIP score: {lora_clip_score}")
 
-    return images_lora, images_base
+    return lora_clip_score, base_clip_score
 
 def average_vqa_score(scores):
     if len(scores) == 0:
@@ -125,21 +145,30 @@ def vqa_evaluation(images_base, images_lora, prompts):
 
     scores_base = []
     for i, (image, prompt) in enumerate(zip(images_base, prompts)):
+        if PROGRESS_PRINT:
+            print("Calculating VQA for image path: ", image, "prompt: ", prompt)
         score = clip_flant5_score(images=[image], texts=[prompt])
         scores_base.append(score)
 
     scores_lora = []
     for i, (image, prompt) in enumerate(zip(images_lora, prompts)):
+        if PROGRESS_PRINT:
+            print("Calculating VQA for image path: ", image, "prompt: ", prompt)
         score = clip_flant5_score(images=[image], texts=[prompt])
         scores_lora.append(score)
 
     print(prompts)
 
-    print("VQA (base) average: ", average_vqa_score(scores_base))
-    print("VQA (lora) average: ", average_vqa_score(scores_lora))
+    average_base = average_vqa_score(scores_base)
+    average_lora = average_vqa_score(scores_lora)
+
+    print("VQA (base) average: ", average_base)
+    print("VQA (lora) average: ", average_lora)
 
     print("VQA (base): ", scores_base)
     print("VQA (lora): ", scores_lora)
+
+    return average_base, average_lora
 
 def vqa_lora(images_lora, prompts):
     clip_flant5_score = t2v_metrics.VQAScore(model="clip-flant5-xl")
@@ -173,11 +202,19 @@ def main():
     images_base, images_lora = load_images()
     prompts = load_prompts()
 
-    clip_evaluation(images_base, images_lora, prompts)
+    lora_clip_score, base_clip_score = clip_evaluation(images_base, images_lora, prompts)
 
     png_base, png_lora = load_pngs()
-    vqa_evaluation(png_base, png_lora, prompts)
+    scores_base, scores_lora = vqa_evaluation(png_base, png_lora, prompts)
 
+    print("=================Summary=================")
+    print(f"Base CLIP score: {base_clip_score}")
+    print(f"LoRA CLIP score: {lora_clip_score}")
+    print("VQA (base): ", scores_base)
+    print("VQA (lora): ", scores_lora)
+
+    # The following function calls can be used to compare different
+    # configurations of inference settings
     # png_configs = load_multiconfig_pngs()
     # vqa_lora(png_configs, prompts)
 
