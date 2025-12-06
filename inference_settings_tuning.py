@@ -7,7 +7,7 @@ import os
 import itertools
 
 model_id = "stabilityai/sdxl-turbo"
-lora_dir = "models/sdxl-turbo-lora"
+lora_dir = "models/sdxl-lora"
 lora_weights = "lora.safetensors"
 DIMENSION = 512
 OUTPUT_DIR = "output"
@@ -83,7 +83,7 @@ def generate_images(pipe):
 
     heat_values = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
     cfg_values = [1.0]
-    steps_values = [1, 2, 3, 4, 5, 6, 7, 8]
+    steps_values = [1, 2, 3, 4, 5, 6, 7, 8, 10, 15, 20]
 
     hyperparameter_combinations = itertools.product(
         heat_values,
