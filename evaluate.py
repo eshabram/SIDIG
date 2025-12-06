@@ -5,6 +5,8 @@ from functools import partial
 from PIL import Image
 import numpy as np
 import os
+import t2v_metrics
+import re
 
 OUTPUT_DIR = "output"
 IMAGES_DIR = os.path.join(OUTPUT_DIR, "evaluation-images")
@@ -45,9 +47,33 @@ def load_prompts():
     
     return prompts
 
-def clip_evaluation(images_base, images_lora):
-    prompts = load_prompts()
+def load_pngs():
+    base_pattern = re.compile(r"^base_(\d+)_.*\.png$")
+    lora_pattern = re.compile(r"^lora_(\d+)_.*\.png$")
 
+    base_files = []
+    lora_files = []
+
+    for fname in os.listdir(IMAGES_DIR):
+        if base_pattern.match(fname):
+            base_files.append(fname)
+        elif lora_pattern.match(fname):
+            lora_files.append(fname)
+
+    # Sort by numeric index i
+    def extract_i(fname):
+        return int(re.search(r"_(\d+)_", fname).group(1))
+
+    base_files = sorted(base_files, key=extract_i)
+    lora_files = sorted(lora_files, key=extract_i)
+
+    # Convert to full paths
+    png_base = [os.path.join(IMAGES_DIR, f) for f in base_files]
+    png_lora = [os.path.join(IMAGES_DIR, f) for f in lora_files]
+
+    return png_base, png_lora
+
+def clip_evaluation(images_base, images_lora, prompts):
     clip_score_fn = partial(clip_score, model_name_or_path="openai/clip-vit-base-patch16")
 
     lora_clip_score = calculate_clip_score(clip_score_fn, images_lora, prompts)
@@ -57,12 +83,44 @@ def clip_evaluation(images_base, images_lora):
 
     return images_lora, images_base
 
+def average_vqa_score(scores):
+    if len(scores) == 0:
+        return 0
+
+    total = 0.0
+    for t in scores:
+        total += t.squeeze().item()
+
+    return total / len(scores)
+
+def vqa_evaluation(images_base, images_lora, prompts):
+    clip_flant5_score = t2v_metrics.VQAScore(model="clip-flant5-xl")
+
+    scores_base = []
+    for i, (image, prompt) in enumerate(zip(images_base, prompts)):
+        score = clip_flant5_score(images=[image], texts=[prompt])
+        scores_base.append(score)
+    print("VQA (base) average: ", average_vqa_score(scores_base))
+
+    scores_lora = []
+    for i, (image, prompt) in enumerate(zip(images_lora, prompts)):
+        score = clip_flant5_score(images=[image], texts=[prompt])
+        scores_lora.append(score)
+
+    print("VQA (base) average: ", average_vqa_score(scores_base))
+    print("VQA (lora) average: ", average_vqa_score(scores_lora))
+
+    print("VQA (base): ", scores_base)
+    print("VQA (lora): ", scores_lora)
 
 def main():
     images_base, images_lora = load_images()
+    prompts = load_prompts()
 
-    clip_evaluation(images_base, images_lora)
+    clip_evaluation(images_base, images_lora, prompts)
 
+    png_base, png_lora = load_pngs()
+    vqa_evaluation(png_base, png_lora, prompts)
 
 if __name__ == "__main__":
     main()
