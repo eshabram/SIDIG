@@ -1,7 +1,8 @@
 from diffusers import AutoPipelineForText2Image
 from transformers import CLIPTokenizer
 import safetensors.torch as st
-import torch, argparse, platform, pdb, warnings
+import torch, argparse, platform, pdb, warnings, os
+from datetime import datetime
 torch.backends.mps.allow_truncated_normal_ = True
 tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
 
@@ -16,6 +17,7 @@ lora_weights = "lora.safetensors"
 INSTRUCTIONS = ("Photorealistic, high resolution image, 4k, detailed, ")
 
 def get_num_tokens(str):
+    """Return number of tokens in string. We use this to limit prompt length."""
     tokens = tokenizer.encode(str, add_special_tokens=True)
     count = len(tokens)
     # print(f"{count}")
@@ -50,6 +52,7 @@ def main(args):
 
     print(f"{BLUE}SIDIG ready. Type 'exit' to quit.{RESET}")
 
+    # interactive prompt loop
     while True:
         prompt = input(f"{LIGHT_BLUE}Enter prompt:{RESET} ")
         if prompt.strip().lower() in ["exit", "quit", "q"]:
@@ -73,8 +76,13 @@ def main(args):
             image = result.images[0]
 
             image.show()
-            # image.save("output/image.png")
-            # print("Saved as output.png\n")
+            if args.save:
+                if not os.path.exists("output"):
+                    os.makedirs("output")
+                stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                img_name = f"sidig_{stamp}.png"
+                image.save(f"output/{img_name}")
+                print(f"Saved as {img_name}\n")
         except Exception as e:
             print(f"Error: {e}")
 
@@ -90,6 +98,7 @@ if __name__ == "__main__":
     parser.add_argument("--scale", "-g", type=float, default=1.0, help="Guidance scale")
     parser.add_argument("--token", "-t", type=str, default="spaceisdirty", help="Custom token prefix for training")
     parser.add_argument("--heat", "-ht", type=float, default=1.0, help="LoRA heat scaling factor")
+    parser.add_argument("--save", "-sv", action="store_true", help="Save generated image to output/ directory")
     args = parser.parse_args()
     
     print(f"Using dimensions: {args.dimension}x{args.dimension}")

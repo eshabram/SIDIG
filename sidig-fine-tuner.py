@@ -34,6 +34,7 @@ def main(args):
     if not METADATA_FILE.exists():
         raise FileNotFoundError(f"Metadata file {METADATA_FILE} is missing.")
 
+    # iterate through the images and metadata to build samples
     samples = []
     meta_root = METADATA_FILE.parent.resolve()
     with METADATA_FILE.open() as fh:
@@ -74,6 +75,7 @@ def main(args):
         ])
 
     device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
+    
     # load pipeline here
     pipe = StableDiffusionXLPipeline.from_pretrained(args.model_path, torch_dtype=torch.float16).to(device)
     pipe.unet.to(device=device, dtype=torch.float32)
@@ -87,6 +89,7 @@ def main(args):
     lora_params = attach_lora(pipe, args.rank)
     pipe.unet.train()
     
+    # set up optimizer, lr scheduler, noise scheduler (using AdamW)
     optimizer = torch.optim.AdamW(lora_params, lr=args.lr, betas=(0.9, 0.999), weight_decay=0.0)
     lr_scheduler = get_scheduler(LR_SCHEDULER, optimizer=optimizer, num_warmup_steps=LR_WARMUP_STEPS, num_training_steps=args.steps)
 
@@ -100,6 +103,7 @@ def main(args):
 
     progress = tqdm(total=args.steps, desc="Training LoRA", dynamic_ncols=True)
 
+    # training loop starts here
     while step < args.steps:
         batch_info = []
         while len(batch_info) < TRAIN_BATCH_SIZE:
@@ -123,6 +127,7 @@ def main(args):
 
         pixel_values = torch.stack(pixel_values).to(device=device, dtype=pipe.vae.dtype)
 
+        # encode prompts and images
         with torch.no_grad():
             prompt_outputs = pipe.encode_prompt(prompt=prompts, device=device, num_images_per_prompt=1, do_classifier_free_guidance=False)
             prompt_embeds = prompt_outputs[0]
@@ -134,6 +139,7 @@ def main(args):
         timesteps = torch.randint(0, noise_scheduler.config.num_train_timesteps, (latents.shape[0],), device=device, dtype=torch.long)
         noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
 
+        # prepare additional time ids for SDXL
         add_time_ids = []
         for size in original_sizes:
             orig_h, orig_w = size
@@ -154,8 +160,8 @@ def main(args):
         assert torch.isfinite(noise).all(), "noise has NaN/Inf"
         assert torch.isfinite(noisy_latents).all(), "noisy_latents has NaN/Inf"
 
-        model_pred = pipe.unet(noisy_latents, timesteps, prompt_embeds, added_cond_kwargs={"text_embeds": pooled_prompt_embeds, 
-                                                                                           "time_ids": add_time_ids}).sample
+        model_pred = pipe.unet(noisy_latents, timesteps, prompt_embeds, 
+                               added_cond_kwargs={"text_embeds": pooled_prompt_embeds, "time_ids": add_time_ids}).sample
 
         if not torch.isfinite(model_pred).all():
             print(f"NaN/Inf in model_pred at step {step}")
@@ -164,6 +170,7 @@ def main(args):
 
         loss = F.mse_loss(model_pred, noise, reduction="mean")
 
+        # backpropagate loss
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(lora_params, 1.0)
@@ -175,6 +182,7 @@ def main(args):
 
     progress.close()
     
+    # save that thang..
     if succeed:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         out_path = OUTPUT_DIR /  OUTPUT_NAME
