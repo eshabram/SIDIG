@@ -7,7 +7,7 @@ import numpy as np
 import os
 
 model_id = "stabilityai/sdxl-turbo"
-lora_dir = "models/sdxl-turbo-lora"
+lora_dir = "models/sdxl-lora"
 lora_weights = "lora.safetensors"
 GUIDANCE_SCALE = 1.0
 DIMENSION = 512
