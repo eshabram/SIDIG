@@ -81,23 +81,23 @@ def generate_images(pipe):
             print("Prompt is too long:", prompt)
             return
 
-    heat_values = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    strength_values = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
     cfg_values = [1.0]
     steps_values = [1, 2, 3, 4, 5, 6, 7, 8, 10, 15, 20]
 
     hyperparameter_combinations = itertools.product(
-        heat_values,
+        strength_values,
         cfg_values,
         steps_values
     )
 
-    for heat_value, cfg_value, steps_value in hyperparameter_combinations:
+    for strength_value, cfg_value, steps_value in hyperparameter_combinations:
         # generate images with the LoRA
         generator = torch.Generator("cuda").manual_seed(1234)
-        pipe.unet.set_adapters("default", weights=[heat_value])
+        pipe.unet.set_adapters("default", weights=[strength_value])
         images_lora = pipe(prompts_with_instruction, height=DIMENSION, width=DIMENSION, num_inference_steps=steps_value, guidance_scale=cfg_value, num_images_per_prompt=1, output_type="np", generator=generator).images
         print("LoRA images generated")
-        prefix = f"InstloraHeat{heat_value}CFG{cfg_value}Steps{steps_value}"
+        prefix = f"InstloraStrength{strength_value}CFG{cfg_value}Steps{steps_value}"
         save_images(images_lora, prompts, prefix)
         # images_lora_np = np.stack(images_lora)
         # np.save(os.path.join(NP_DIR, f"{prefix}.npy"), images_lora)

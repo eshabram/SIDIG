@@ -29,7 +29,7 @@ def main(args):
     if args.lora:
         try:
             pipe.unet.load_lora_adapter(lora_dir, weight_name=args.lora_name, adapter_name="default", prefix=None)
-            pipe.unet.set_adapters("default", weights=[args.heat])
+            pipe.unet.set_adapters("default", weights=[args.strength])
             print(f"{BLUE}Loaded LoRA from {lora_dir}/{args.lora_name}{RESET}")
             # print("active adapters:", pipe.unet.active_adapters)
         except Exception as e:
@@ -97,7 +97,7 @@ if __name__ == "__main__":
     parser.add_argument("--steps", "-s", type=int, default=4, help="Number of inference steps")
     parser.add_argument("--scale", "-g", type=float, default=1.0, help="Guidance scale")
     parser.add_argument("--token", "-t", type=str, default="spaceisdirty", help="Custom token prefix for training")
-    parser.add_argument("--heat", "-ht", type=float, default=1.0, help="LoRA heat scaling factor")
+    parser.add_argument("--strength", "-st", type=float, default=1.0, help="LoRA strength scaling factor")
     parser.add_argument("--save", "-sv", action="store_true", help="Save generated image to output/ directory")
     args = parser.parse_args()
     

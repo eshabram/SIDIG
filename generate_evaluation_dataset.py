@@ -13,7 +13,7 @@ lora_weights = "lora.safetensors"
 GUIDANCE_SCALE = 1.0
 DIMENSION = 512
 INFER_STEPS = 4
-HEAT = 0.3
+STRENGTH = 0.3
 BATCH_SIZE = 4
 OUTPUT_DIR = "output"
 IMAGES_DIR = os.path.join(OUTPUT_DIR, "evaluation-images")
@@ -282,7 +282,7 @@ def main():
     print(device)
 
     pipe.unet.load_lora_adapter(lora_dir, weight_name=lora_weights, adapter_name="default", prefix=None)
-    pipe.unet.set_adapters("default", weights=[HEAT])
+    pipe.unet.set_adapters("default", weights=[STRENGTH])
 
     generate_images(pipe)
 
