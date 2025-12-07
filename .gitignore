@@ -4,8 +4,8 @@ models/*
 images/*
 tools/
 **/*.zip
-!models/sdxl-turbo-lora/
-models/sdxl-turbo-lora/*
-!models/sdxl-turbo-lora/.gitkeep
+!models/sdxl-lora/
+models/sdxl-lora/*
+!models/sdxl-lora/.place_lora_safetensors_here
 old/*
 output/*

@@ -1,4 +1,4 @@
-# PyTorch 2.9 + CUDA 13.0
+# PyTorch 2.9.1 + CUDA 12.9
 --index-url https://download.pytorch.org/whl/cu129
 torch==2.9.1
 torchvision==0.24.1

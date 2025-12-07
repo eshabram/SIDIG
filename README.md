@@ -2,18 +2,17 @@
 
 
 ## Getting Started
-It is highly recommended to use a virtual environment. To install the dependencies, run this command from inside you virtual environment:
-```shell
-pip install -r requirements.txt
-```
-OR if you're really slick, you can use Conda:
+It is highly recommended to use a virtual environment. To install the dependencies, run these commands to create a conda virtual environment:
 ```
 conda create -n sidig python=3.12 -y
 conda activate sidig
 pip install -r requirements1.txt
 pip install -r requirements2.txt
 ```
-Note: files in requirements1.txt are from a specific index, so they are separated for clarity and specificity
+Note: packages in requirements1.txt are from a specific index, so they are separated for clarity and specificity
+
+### Lora Location
+Place the `lora.safetensors` file in models/sdxl-turbo.
 
 ### Installing SDXL-Turbo
 When running the fine tune or prompt script, the sdxl-turbo model will be automatically downloaded and take up about 7gb.
@@ -64,7 +63,9 @@ The final step is to install torchmetrics
 pip install torchmetrics
 ```
 
-Once the evaluation environment (vqa) is set up, the evaluation metrics can be reproduced with:
+Once the evaluation environment (vqa) is set up and active, the evaluation metrics can be reproduced with:
 ```shell
-python evaluation.py
+python evaluate.py
 ```
+
+Note: On a machine that had all of these packages and environments cached, it took about 45 minutes to create the environments, generate the images, and evaluate them.
